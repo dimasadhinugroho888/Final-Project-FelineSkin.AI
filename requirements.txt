@@ -1,11 +1,7 @@
+streamlit
 torch
 torchvision
-streamlit
-Pillow
+pillow
 numpy
-pandas
-opencv-python
-scikit-learn
-matplotlib
-seaborn
+opencv-python-headless
 requests
