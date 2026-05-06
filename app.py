@@ -7,7 +7,7 @@ import cv2
 import requests
 
 # =========================
-# 🔑 CONFIG (STREAMLIT SECRETS)
+# 🔑 CONFIG
 # =========================
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 
@@ -19,7 +19,7 @@ disease_map = {
 }
 
 # =========================
-# 🤖 AI FUNCTION
+# 🤖 AI FUNCTION (SMART)
 # =========================
 def get_ai_explanation(disease_name):
     url = "https://openrouter.ai/api/v1/chat/completions"
@@ -29,16 +29,28 @@ def get_ai_explanation(disease_name):
         "Content-Type": "application/json"
     }
 
-    prompt = f"""
-    Jelaskan penyakit {disease_name} pada kucing dengan bahasa sederhana.
+    # 🔥 BEDAKAN SEHAT vs SAKIT
+    if disease_name == "Kucing sehat":
+        prompt = f"""
+        Kucing dalam kondisi sehat.
 
-    Format:
-    - Penjelasan
-    - Penyebab
-    - Gejala
-    - Penanganan awal
-    - Kapan ke dokter
-    """
+        Berikan:
+        - Tips perawatan harian
+        - Cara menjaga kesehatan kulit
+        - Pencegahan penyakit kulit
+        - Kapan perlu cek ke dokter
+        """
+    else:
+        prompt = f"""
+        Jelaskan penyakit {disease_name} pada kucing dengan bahasa sederhana.
+
+        Format:
+        - Penjelasan
+        - Penyebab
+        - Gejala
+        - Penanganan awal
+        - Kapan ke dokter
+        """
 
     models = [
         "tencent/hy3-preview:free",
@@ -63,8 +75,18 @@ def get_ai_explanation(disease_name):
     return "❌ AI gagal merespon."
 
 # =========================
-# LOAD
+# LOAD MODEL
 # =========================
+@st.cache_resource
+def load_model():
+    return torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', weights=None)
+
+@st.cache_resource
+def load_cat_detector():
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', pretrained=True)
+    model.eval()
+    return model
+
 @st.cache_data
 def load_class_names():
     try:
@@ -72,11 +94,6 @@ def load_class_names():
             return [x.strip() for x in f.readlines()]
     except:
         return ["Flea_Allergy", "Health", "Ringworm", "Scabies"]
-
-@st.cache_resource
-def load_model():
-    model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', weights=None)
-    return model
 
 # =========================
 # PREPROCESS
@@ -88,6 +105,29 @@ def preprocess(img):
         transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
     ])
     return transform(img).unsqueeze(0)
+
+# =========================
+# DETEKSI KUCING
+# =========================
+def is_cat_image(img):
+    model = load_cat_detector()
+
+    transform = transforms.Compose([
+        transforms.Resize((224,224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
+    ])
+
+    tensor = transform(img).unsqueeze(0)
+
+    with torch.no_grad():
+        out = model(tensor)
+        probs = torch.nn.functional.softmax(out[0], dim=0)
+
+    cat_classes = [281, 282, 283, 284, 285]
+    cat_prob = sum([probs[i].item() for i in cat_classes])
+
+    return cat_prob > 0.3
 
 # =========================
 # GRADCAM
@@ -128,7 +168,6 @@ def gradcam(model, img_tensor, target):
 # MAIN
 # =========================
 def main():
-    # ===== BRANDING =====
     st.title("🐱 FelineSkin.AI")
     st.caption("Smart AI for Cat Skin Health 🐾")
 
@@ -150,8 +189,14 @@ def main():
         img = Image.open(file).convert('RGB')
         st.image(img)
 
+        # ===== CEK KUCING =====
+        with st.spinner("Memastikan ini kucing..."):
+            if not is_cat_image(img):
+                st.error("❌ Gambar tidak terdeteksi sebagai kucing")
+                st.stop()
+
         # ===== PREDIKSI =====
-        with st.spinner("Mendeteksi..."):
+        with st.spinner("Mendeteksi penyakit..."):
             tensor = preprocess(img)
 
             with torch.no_grad():
@@ -189,19 +234,20 @@ def main():
         st.caption("Merah = area yang paling mempengaruhi prediksi AI")
 
         # ===== AI =====
-        st.write("## 🧠 Analisis & Saran AI")
-        disease = disease_map.get(label, label)
+        if label == "Health":
+            st.write("## 🐾 Tips Perawatan Kucing Sehat")
+        else:
+            st.write("## 🧠 Analisis & Saran AI")
 
         with st.spinner("Mengambil penjelasan..."):
-            ai = get_ai_explanation(disease)
+            ai = get_ai_explanation(indo_label)
 
         st.write(ai)
-
-        st.warning("⚠️ Ini bukan diagnosis medis. Konsultasikan ke dokter hewan untuk hasil pasti.")
+        st.warning("⚠️ Ini bukan diagnosis medis. Konsultasikan ke dokter hewan.")
 
         # ===== MAP =====
-        st.write("## 🗺️ Cari Dokter / Puskeswan")
-        st.info("Gunakan peta untuk menemukan layanan terdekat dari lokasi kamu")
+        st.write("## 🗺️ Cari Dokter")
+        st.info("Gunakan peta untuk menemukan layanan terdekat")
 
         kategori = st.selectbox(
             "Pilih layanan:",
