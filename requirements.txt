@@ -1,0 +1,11 @@
+torch
+torchvision
+streamlit
+Pillow
+numpy
+pandas
+opencv-python
+scikit-learn
+matplotlib
+seaborn
+requests

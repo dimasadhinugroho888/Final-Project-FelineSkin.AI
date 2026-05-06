@@ -1,0 +1,224 @@
+import streamlit as st
+import torch
+from torchvision import transforms
+from PIL import Image
+import numpy as np
+import cv2
+import requests
+
+# =========================
+# 🔑 CONFIG (STREAMLIT SECRETS)
+# =========================
+OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
+
+disease_map = {
+    "Flea_Allergy": "Alergi kutu pada kucing",
+    "Health": "Kucing sehat",
+    "Ringworm": "Kurap pada kucing",
+    "Scabies": "Kudis pada kucing"
+}
+
+# =========================
+# 🤖 AI FUNCTION
+# =========================
+def get_ai_explanation(disease_name):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    prompt = f"""
+    Jelaskan penyakit {disease_name} pada kucing dengan bahasa sederhana.
+
+    Format:
+    - Penjelasan
+    - Penyebab
+    - Gejala
+    - Penanganan awal
+    - Kapan ke dokter
+    """
+
+    models = [
+        "tencent/hy3-preview:free",
+        "mistralai/mistral-7b-instruct:free"
+    ]
+
+    for model in models:
+        try:
+            res = requests.post(url, headers=headers, json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}]
+            }, timeout=10)
+
+            result = res.json()
+
+            if "choices" in result and len(result["choices"]) > 0:
+                return result["choices"][0]["message"]["content"]
+
+        except:
+            continue
+
+    return "❌ AI gagal merespon."
+
+# =========================
+# LOAD
+# =========================
+@st.cache_data
+def load_class_names():
+    try:
+        with open('class_names.txt') as f:
+            return [x.strip() for x in f.readlines()]
+    except:
+        return ["Flea_Allergy", "Health", "Ringworm", "Scabies"]
+
+@st.cache_resource
+def load_model():
+    model = torch.hub.load('pytorch/vision:v0.10.0', 'resnet18', weights=None)
+    return model
+
+# =========================
+# PREPROCESS
+# =========================
+def preprocess(img):
+    transform = transforms.Compose([
+        transforms.Resize((224,224)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
+    ])
+    return transform(img).unsqueeze(0)
+
+# =========================
+# GRADCAM
+# =========================
+def gradcam(model, img_tensor, target):
+    grads, acts = [], []
+
+    def f_hook(m,i,o): acts.append(o)
+    def b_hook(m,gi,go): grads.append(go[0])
+
+    h1 = model.layer4.register_forward_hook(f_hook)
+    h2 = model.layer4.register_backward_hook(b_hook)
+
+    out = model(img_tensor)
+    loss = out[0, target]
+
+    model.zero_grad()
+    loss.backward()
+
+    h1.remove()
+    h2.remove()
+
+    pooled = torch.mean(grads[0], dim=[0,2,3])
+    act = acts[0][0]
+
+    for i in range(act.shape[0]):
+        act[i] *= pooled[i]
+
+    heat = torch.mean(act, dim=0).detach().numpy()
+    heat = np.maximum(heat, 0)
+    heat /= np.max(heat) if np.max(heat) else 1
+    heat = cv2.resize(heat, (224,224))
+    heat = np.uint8(255*heat)
+
+    return cv2.applyColorMap(heat, cv2.COLORMAP_JET)
+
+# =========================
+# MAIN
+# =========================
+def main():
+    # ===== BRANDING =====
+    st.title("🐱 FelineSkin.AI")
+    st.caption("Smart AI for Cat Skin Health 🐾")
+
+    classes = load_class_names()
+    model = load_model()
+    model.fc = torch.nn.Linear(model.fc.in_features, len(classes))
+
+    try:
+        model.load_state_dict(torch.load('cat_skin_disease_model.pth', map_location='cpu'))
+    except:
+        st.error("Model tidak ditemukan!")
+        return
+
+    model.eval()
+
+    file = st.file_uploader("Upload gambar", type=["jpg","png","jpeg"])
+
+    if file:
+        img = Image.open(file).convert('RGB')
+        st.image(img)
+
+        # ===== PREDIKSI =====
+        with st.spinner("Mendeteksi..."):
+            tensor = preprocess(img)
+
+            with torch.no_grad():
+                out = model(tensor)
+                probs = torch.nn.functional.softmax(out[0], dim=0)
+
+            conf, idx = torch.max(probs, 0)
+            label = classes[idx.item()]
+            conf_pct = conf.item()*100
+
+        indo_label = disease_map.get(label, label)
+
+        st.success(f"🎯 {indo_label} ({conf_pct:.1f}%)")
+
+        if conf_pct < 70:
+            st.warning("⚠️ Keyakinan rendah, hasil mungkin tidak akurat")
+
+        # ===== PROB =====
+        st.write("## 📊 Probabilitas")
+        for i, c in enumerate(classes):
+            if i == idx:
+                st.progress(probs[i].item(), text=f"⭐ {c}: {probs[i].item()*100:.1f}%")
+            else:
+                st.progress(probs[i].item(), text=f"{c}: {probs[i].item()*100:.1f}%")
+
+        # ===== CAM =====
+        st.write("## 🔍 Area Deteksi")
+        heat = gradcam(model, tensor, idx.item())
+
+        img_np = np.array(img.resize((224,224)))
+        overlay = cv2.addWeighted(img_np, 0.6, heat, 0.4, 0)
+        overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
+
+        st.image(overlay)
+        st.caption("Merah = area yang paling mempengaruhi prediksi AI")
+
+        # ===== AI =====
+        st.write("## 🧠 Analisis & Saran AI")
+        disease = disease_map.get(label, label)
+
+        with st.spinner("Mengambil penjelasan..."):
+            ai = get_ai_explanation(disease)
+
+        st.write(ai)
+
+        st.warning("⚠️ Ini bukan diagnosis medis. Konsultasikan ke dokter hewan untuk hasil pasti.")
+
+        # ===== MAP =====
+        st.write("## 🗺️ Cari Dokter / Puskeswan")
+        st.info("Gunakan peta untuk menemukan layanan terdekat dari lokasi kamu")
+
+        kategori = st.selectbox(
+            "Pilih layanan:",
+            ["dokter hewan", "klinik hewan", "puskeswan"]
+        )
+
+        lokasi = st.text_input("Masukkan lokasi")
+
+        query = f"{kategori} terdekat di {lokasi}" if lokasi else f"{kategori} terdekat"
+        map_url = f"https://www.google.com/maps?q={query.replace(' ', '+')}&output=embed"
+
+        st.components.v1.iframe(map_url, height=500)
+
+        st.link_button(
+            "🔍 Buka di Google Maps",
+            f"https://www.google.com/maps/search/{query.replace(' ', '+')}"
+        )
+
+if __name__ == "__main__":
+    main()
