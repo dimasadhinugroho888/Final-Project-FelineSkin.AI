@@ -123,10 +123,25 @@ def is_cat_image(img):
         out = model(tensor)
         probs = torch.nn.functional.softmax(out[0], dim=0)
 
-    cat_classes = [281, 282, 283, 284, 285]
-    cat_prob = sum([probs[i].item() for i in cat_classes])
+    # ImageNet indices for cat breeds
+    cat_indices = [281, 282, 283, 284, 285]
+    
+    cat_prob = sum([probs[i].item() for i in cat_indices])
+    
+    top_prob, top_idx = torch.max(probs, 0)
+    top_idx = top_idx.item()
 
-    return cat_prob > 0.15  # lebih fleksibel
+    # Decision logic
+    if cat_prob > 0.12 or top_idx in cat_indices:
+        return True, "Kucing terdeteksi"
+    
+    if top_idx in range(0, 398): # General animals (mammals, birds, etc.)
+        if cat_prob > 0.05:
+            return True, "Hewan terdeteksi, kemungkinan kucing"
+        else:
+            return False, "Gambar terdeteksi sebagai hewan lain, bukan kucing."
+            
+    return False, "Gambar tidak dikenali sebagai kucing."
 
 # =========================
 # CLOSE-UP DETECTION (🔥 BARU)
@@ -135,12 +150,18 @@ def is_closeup_texture(img):
     img_np = np.array(img.resize((224,224)))
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
 
-    variance = np.var(gray)
-
-    edges = cv2.Canny(gray, 100, 200)
+    # Laplacian variance (sharpness/texture detail)
+    lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    
+    # Canny for edge density (sensitive to fur/hair)
+    edges = cv2.Canny(gray, 30, 100)
     edge_density = np.sum(edges > 0) / (224*224)
 
-    if variance > 500 and edge_density > 0.08:
+    # Intensity variance
+    intensity_var = np.var(gray)
+
+    # Close-up of skin/fur typically has high local texture
+    if lap_var > 120 or (edge_density > 0.05 and intensity_var > 200):
         return True
     return False
 
@@ -206,14 +227,14 @@ def main():
 
         # ===== DETEKSI =====
         with st.spinner("Analisis gambar..."):
-            is_cat = is_cat_image(img)
+            is_cat, cat_info = is_cat_image(img)
             is_closeup = is_closeup_texture(img)
 
         if not is_cat:
             if is_closeup:
-                st.warning("⚠️ Mode Close-up terdeteksi, tetap diproses...")
+                st.warning("⚠️ Mode Close-up/Zoom terdeteksi, tetap diproses...")
             else:
-                st.error("❌ Gambar kemungkinan bukan kucing")
+                st.error(f"❌ {cat_info}")
                 st.stop()
 
         # ===== PREDIKSI =====
