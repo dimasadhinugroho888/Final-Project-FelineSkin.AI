@@ -131,17 +131,14 @@ def is_cat_image(img):
     top_prob, top_idx = torch.max(probs, 0)
     top_idx = top_idx.item()
 
-    # Decision logic
-    if cat_prob > 0.12 or top_idx in cat_indices:
+    # Decision logic - Much stricter
+    if cat_prob > 0.45: # High confidence
         return True, "Kucing terdeteksi"
     
-    if top_idx in range(0, 398): # General animals (mammals, birds, etc.)
-        if cat_prob > 0.05:
-            return True, "Hewan terdeteksi, kemungkinan kucing"
-        else:
-            return False, "Gambar terdeteksi sebagai hewan lain, bukan kucing."
+    if top_idx in cat_indices and top_prob > 0.30: # Cat is the top prediction
+        return True, "Kucing terdeteksi"
             
-    return False, "Gambar tidak dikenali sebagai kucing."
+    return False, "Gambar tidak dikenali sebagai kucing. Harap gunakan foto kucing yang jelas."
 
 # =========================
 # CLOSE-UP DETECTION (🔥 BARU)
@@ -154,14 +151,15 @@ def is_closeup_texture(img):
     lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
     
     # Canny for edge density (sensitive to fur/hair)
-    edges = cv2.Canny(gray, 30, 100)
+    edges = cv2.Canny(gray, 50, 150)
     edge_density = np.sum(edges > 0) / (224*224)
 
-    # Intensity variance
-    intensity_var = np.var(gray)
-
-    # Close-up of skin/fur typically has high local texture
-    if lap_var > 120 or (edge_density > 0.05 and intensity_var > 200):
+    # Organic textures like fur/skin usually have:
+    # 1. Medium-High Laplacian variance (200 - 1500)
+    # 2. Consistent edge density (0.08 - 0.25)
+    # Graphics/Icons usually have very few edges or extreme contrast (> 2000 var)
+    
+    if 180 < lap_var < 2000 and 0.07 < edge_density < 0.3:
         return True
     return False
 
@@ -253,8 +251,11 @@ def main():
 
         st.success(f"🎯 {indo_label} ({conf_pct:.1f}%)")
 
-        if conf_pct < 60:
-            st.warning("⚠️ Keyakinan rendah, hasil mungkin tidak akurat")
+        if conf_pct < 50:
+            st.error("⚠️ Model sangat tidak yakin dengan hasil ini. Harap pastikan gambar adalah penyakit kulit kucing.")
+            st.stop()
+        elif conf_pct < 70:
+            st.warning("⚠️ Keyakinan rendah, hasil mungkin tidak akurat. Harap pastikan pencahayaan cukup dan fokus pada area penyakit.")
 
         # ===== PROB =====
         st.write("## 📊 Probabilitas")
