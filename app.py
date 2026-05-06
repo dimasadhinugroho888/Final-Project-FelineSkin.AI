@@ -19,7 +19,7 @@ disease_map = {
 }
 
 # =========================
-# 🤖 AI FUNCTION (SMART)
+# 🤖 AI FUNCTION
 # =========================
 def get_ai_explanation(disease_name):
     url = "https://openrouter.ai/api/v1/chat/completions"
@@ -29,16 +29,15 @@ def get_ai_explanation(disease_name):
         "Content-Type": "application/json"
     }
 
-    # 🔥 BEDAKAN SEHAT vs SAKIT
     if disease_name == "Kucing sehat":
-        prompt = f"""
+        prompt = """
         Kucing dalam kondisi sehat.
 
         Berikan:
         - Tips perawatan harian
         - Cara menjaga kesehatan kulit
         - Pencegahan penyakit kulit
-        - Kapan perlu cek ke dokter
+        - Kapan perlu ke dokter
         """
     else:
         prompt = f"""
@@ -127,7 +126,23 @@ def is_cat_image(img):
     cat_classes = [281, 282, 283, 284, 285]
     cat_prob = sum([probs[i].item() for i in cat_classes])
 
-    return cat_prob > 0.3
+    return cat_prob > 0.15  # lebih fleksibel
+
+# =========================
+# CLOSE-UP DETECTION (🔥 BARU)
+# =========================
+def is_closeup_texture(img):
+    img_np = np.array(img.resize((224,224)))
+    gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+
+    variance = np.var(gray)
+
+    edges = cv2.Canny(gray, 100, 200)
+    edge_density = np.sum(edges > 0) / (224*224)
+
+    if variance > 500 and edge_density > 0.08:
+        return True
+    return False
 
 # =========================
 # GRADCAM
@@ -189,10 +204,16 @@ def main():
         img = Image.open(file).convert('RGB')
         st.image(img)
 
-        # ===== CEK KUCING =====
-        with st.spinner("Memastikan ini kucing..."):
-            if not is_cat_image(img):
-                st.error("❌ Gambar tidak terdeteksi sebagai kucing")
+        # ===== DETEKSI =====
+        with st.spinner("Analisis gambar..."):
+            is_cat = is_cat_image(img)
+            is_closeup = is_closeup_texture(img)
+
+        if not is_cat:
+            if is_closeup:
+                st.warning("⚠️ Mode Close-up terdeteksi, tetap diproses...")
+            else:
+                st.error("❌ Gambar kemungkinan bukan kucing")
                 st.stop()
 
         # ===== PREDIKSI =====
@@ -211,16 +232,13 @@ def main():
 
         st.success(f"🎯 {indo_label} ({conf_pct:.1f}%)")
 
-        if conf_pct < 70:
+        if conf_pct < 60:
             st.warning("⚠️ Keyakinan rendah, hasil mungkin tidak akurat")
 
         # ===== PROB =====
         st.write("## 📊 Probabilitas")
         for i, c in enumerate(classes):
-            if i == idx:
-                st.progress(probs[i].item(), text=f"⭐ {c}: {probs[i].item()*100:.1f}%")
-            else:
-                st.progress(probs[i].item(), text=f"{c}: {probs[i].item()*100:.1f}%")
+            st.progress(probs[i].item(), text=f"{c}: {probs[i].item()*100:.1f}%")
 
         # ===== CAM =====
         st.write("## 🔍 Area Deteksi")
@@ -231,7 +249,7 @@ def main():
         overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
 
         st.image(overlay)
-        st.caption("Merah = area yang paling mempengaruhi prediksi AI")
+        st.caption("Merah = area paling berpengaruh")
 
         # ===== AI =====
         if label == "Health":
@@ -243,11 +261,10 @@ def main():
             ai = get_ai_explanation(indo_label)
 
         st.write(ai)
-        st.warning("⚠️ Ini bukan diagnosis medis. Konsultasikan ke dokter hewan.")
+        st.warning("⚠️ Ini bukan diagnosis medis.")
 
         # ===== MAP =====
         st.write("## 🗺️ Cari Dokter")
-        st.info("Gunakan peta untuk menemukan layanan terdekat")
 
         kategori = st.selectbox(
             "Pilih layanan:",
