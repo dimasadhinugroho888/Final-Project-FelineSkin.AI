@@ -9,7 +9,10 @@ import requests
 # =========================
 # 🔑 CONFIG
 # =========================
-OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
+try:
+    OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
+except:
+    OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 
 disease_map = {
     "Flea_Allergy": "Alergi kutu pada kucing",
