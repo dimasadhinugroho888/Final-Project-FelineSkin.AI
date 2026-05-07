@@ -4,21 +4,20 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install system dependencies untuk OpenCV
+# Install system dependencies (Sudah diperbaiki untuk Debian versi terbaru)
 RUN apt-get update && apt-get install -y \
     build-essential \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements dulu
+# Copy & Install requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy semua file ke dalam container
+# Copy project files
 COPY . .
 
 EXPOSE 8080
 
-# Jalankan streamlit (pastikan file utama kamu app.py)
 CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
