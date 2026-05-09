@@ -56,6 +56,7 @@ def get_ai_explanation(disease_name):
         """
 
     models = [
+        "inclusionai/ring-2.6-1t:free",
         "tencent/hy3-preview:free",
         "mistralai/mistral-7b-instruct:free"
     ]
