@@ -56,6 +56,9 @@ def get_ai_explanation(disease_name):
         """
 
     models = [
+        "baidu/cobuddy:free",
+        "deepseek/deepseek-v4-flash:free",
+        "openrouter/owl-alpha",
         "google/gemma-4-31b-it:free",
         "mistralai/mistral-7b-instruct:free"
     ]
@@ -65,7 +68,7 @@ def get_ai_explanation(disease_name):
             res = requests.post(url, headers=headers, json={
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}]
-            }, timeout=10)
+            }, timeout=30)
 
             result = res.json()
 
