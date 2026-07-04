@@ -25,7 +25,12 @@ DISEASE_MAP = {
 }
 
 OPENROUTER_MODELS = [
-    "openrouter/fusion",
+    "cohere/north-mini-code:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "google/gemma-4-31b-it:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "openai/gpt-oss-120b:free",
 ]
 
 CAT_IMAGENET_INDICES = {
