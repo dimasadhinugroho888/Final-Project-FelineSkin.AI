@@ -41,6 +41,8 @@ CAT_IMAGENET_INDICES = {
     285,  # Egyptian cat
 }
 
+DOG_IMAGENET_INDICES = set(range(151, 269))
+
 CAT_TOPIC_KEYWORDS = {
     "kucing",
     "cat",
@@ -294,16 +296,32 @@ def is_cat_image(img):
         probs = torch.nn.functional.softmax(out[0], dim=0)
 
     cat_prob = sum(probs[index].item() for index in CAT_IMAGENET_INDICES)
+    dog_prob = sum(probs[index].item() for index in DOG_IMAGENET_INDICES)
     top_prob, top_idx = torch.max(probs, 0)
     top_idx = top_idx.item()
+    top_prob_value = top_prob.item()
+
+    if top_idx in DOG_IMAGENET_INDICES and top_prob_value > 0.18:
+        return (
+            False,
+            f"Gambar terdeteksi lebih mirip anjing ({top_prob_value * 100:.1f}%). Upload foto kucing.",
+            False,
+        )
+
+    if dog_prob > 0.30 and dog_prob > cat_prob * 2:
+        return (
+            False,
+            f"Gambar terdeteksi lebih mirip anjing ({dog_prob * 100:.1f}%). Upload foto kucing.",
+            False,
+        )
 
     if cat_prob > 0.35:
-        return True, f"Kucing terdeteksi ({cat_prob * 100:.1f}%)."
+        return True, f"Kucing terdeteksi ({cat_prob * 100:.1f}%).", True
 
-    if top_idx in CAT_IMAGENET_INDICES and top_prob.item() > 0.25:
-        return True, f"Kucing terdeteksi ({top_prob.item() * 100:.1f}%)."
+    if top_idx in CAT_IMAGENET_INDICES and top_prob_value > 0.25:
+        return True, f"Kucing terdeteksi ({top_prob_value * 100:.1f}%).", True
 
-    return False, "Gambar tidak dikenali sebagai kucing. Gunakan foto kucing yang jelas atau close-up kulit/bulu."
+    return False, "Gambar tidak dikenali sebagai kucing. Gunakan foto kucing yang jelas atau close-up kulit/bulu.", True
 
 
 def is_closeup_texture(img):
@@ -437,14 +455,15 @@ def main():
 
     with st.spinner("Menganalisis kualitas dan objek gambar..."):
         try:
-            is_cat, cat_info = is_cat_image(img)
+            is_cat, cat_info, allow_closeup_bypass = is_cat_image(img)
         except Exception as exc:
             is_cat = False
+            allow_closeup_bypass = False
             cat_info = f"Deteksi kucing gagal dijalankan: {exc}"
         is_closeup = is_closeup_texture(img)
 
     if not is_cat:
-        if is_closeup:
+        if is_closeup and allow_closeup_bypass:
             st.warning("Mode close-up kulit/bulu terdeteksi. Hasil tetap diproses, tetapi pastikan gambar berasal dari kucing.")
         else:
             st.error(cat_info)
