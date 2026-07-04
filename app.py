@@ -324,14 +324,48 @@ def is_cat_image(img):
     return False, "Gambar tidak dikenali sebagai kucing. Gunakan foto kucing yang jelas atau close-up kulit/bulu.", True
 
 
-def is_closeup_texture(img):
+def get_texture_stats(img):
     img_np = np.array(img.resize((224, 224)))
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
     lap_var = cv2.Laplacian(gray, cv2.CV_64F).var()
     edges = cv2.Canny(gray, 50, 150)
     edge_density = np.sum(edges > 0) / (224 * 224)
+    dark_ratio = np.mean(gray < 25)
+    bright_ratio = np.mean(gray > 235)
+    color_std = np.mean(np.std(img_np, axis=(0, 1)))
+    unique_ratio = len(np.unique(img_np.reshape(-1, 3), axis=0)) / (224 * 224)
 
-    return 150 < lap_var < 2200 and 0.05 < edge_density < 0.35
+    return {
+        "lap_var": lap_var,
+        "edge_density": edge_density,
+        "dark_ratio": dark_ratio,
+        "bright_ratio": bright_ratio,
+        "color_std": color_std,
+        "unique_ratio": unique_ratio,
+    }
+
+
+def looks_like_graphic_or_logo(img):
+    stats = get_texture_stats(img)
+    if stats["dark_ratio"] > 0.45 or stats["bright_ratio"] > 0.55:
+        return True
+
+    if stats["color_std"] < 18 or stats["unique_ratio"] < 0.08:
+        return True
+
+    return False
+
+
+def is_closeup_texture(img):
+    stats = get_texture_stats(img)
+
+    if stats["dark_ratio"] > 0.45 or stats["bright_ratio"] > 0.55:
+        return False
+
+    if stats["color_std"] < 18 or stats["unique_ratio"] < 0.08:
+        return False
+
+    return 150 < stats["lap_var"] < 2200 and 0.05 < stats["edge_density"] < 0.35
 
 
 def gradcam(model, img_tensor, target):
@@ -460,7 +494,8 @@ def main():
             is_cat = False
             allow_closeup_bypass = False
             cat_info = f"Deteksi kucing gagal dijalankan: {exc}"
-        is_closeup = is_closeup_texture(img)
+        is_graphic = looks_like_graphic_or_logo(img)
+        is_closeup = False if is_graphic else is_closeup_texture(img)
 
     if not is_cat:
         if is_closeup and allow_closeup_bypass:
