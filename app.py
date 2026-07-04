@@ -106,8 +106,17 @@ def call_openrouter(messages, temperature=0.35, max_tokens=700):
                 json=payload,
                 timeout=35,
             )
-            response.raise_for_status()
-            result = response.json()
+            try:
+                result = response.json()
+            except ValueError:
+                result = {}
+
+            if response.status_code >= 400:
+                error_data = result.get("error", {}) if isinstance(result, dict) else {}
+                error_message = error_data.get("message") or response.text[:300]
+                last_error = f"HTTP {response.status_code} dari OpenRouter: {error_message}"
+                continue
+
             choices = result.get("choices", [])
 
             if choices:
@@ -116,12 +125,18 @@ def call_openrouter(messages, temperature=0.35, max_tokens=700):
                     return content.strip()
 
             last_error = "Respons OpenRouter tidak berisi jawaban."
+        except requests.exceptions.Timeout:
+            last_error = "Request ke OpenRouter timeout."
+        except requests.exceptions.ConnectionError:
+            last_error = "Tidak bisa terhubung ke OpenRouter."
         except requests.exceptions.RequestException as exc:
             last_error = str(exc)
-        except ValueError as exc:
-            last_error = f"Respons OpenRouter bukan JSON valid: {exc}"
 
-    return f"AI gagal merespon. Detail terakhir: {last_error}"
+    return (
+        "AI gagal merespon dari OpenRouter. "
+        f"Detail terakhir: {last_error}. "
+        "Pastikan Streamlit Secrets berisi OPENROUTER_API_KEY yang valid dan akun OpenRouter memiliki akses/kredit."
+    )
 
 
 def get_ai_explanation(disease_name, confidence):
