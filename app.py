@@ -469,6 +469,8 @@ def main():
         if os.path.exists(LOGO_PATH):
             st.image(LOGO_PATH, width=140)
         st.header("Panduan Foto")
+        st.write("- Hanya untuk diagnosis awal penyakit kulit kucing")
+        st.write("- Jangan gunakan foto hewan lain karena model tidak dapat memberikan hasil yang akurat")
         st.write("- Gunakan foto yang terang dan tidak blur.")
         st.write("- Fokuskan pada area kulit atau bulu yang bermasalah.")
         st.write("- Hindari gambar hasil edit/filter.")
